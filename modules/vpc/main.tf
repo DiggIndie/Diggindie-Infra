@@ -1,6 +1,5 @@
-# modules/vpc/main.tf - VPC 및 네트워크 설정
+# modules/vpc/main.tf
 
-# 가용 영역 데이터
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -16,7 +15,7 @@ resource "aws_vpc" "main" {
   }
 }
 
-# 인터넷 게이트웨이
+# Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -25,21 +24,33 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# 퍼블릭 서브넷 (2개 AZ)
-resource "aws_subnet" "public" {
-  count                   = 2
+# Public Subnets (Multi-AZ)
+# 기존: 10.0.0.0/24 (2a), 10.0.1.0/24 (2b)
+resource "aws_subnet" "public_a" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
-  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0) # 10.0.0.0/24
+  availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-public-${count.index + 1}"
+    Name = "${var.project_name}-${var.environment}-public-1"
     Type = "Public"
   }
 }
 
-# 퍼블릭 라우트 테이블
+resource "aws_subnet" "public_b" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1) # 10.0.1.0/24
+  availability_zone       = data.aws_availability_zones.available.names[1]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-public-2"
+    Type = "Public"
+  }
+}
+
+# Route Table
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -53,29 +64,25 @@ resource "aws_route_table" "public" {
   }
 }
 
-# 퍼블릭 서브넷 라우트 테이블 연결
-resource "aws_route_table_association" "public" {
-  count          = 2
-  subnet_id      = aws_subnet.public[count.index].id
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_a.id
   route_table_id = aws_route_table.public.id
 }
 
-# 웹 서버용 보안 그룹 (HTTP, HTTPS, SSH)
+resource "aws_route_table_association" "public_b" {
+  subnet_id      = aws_subnet.public_b.id
+  route_table_id = aws_route_table.public.id
+}
+
+# ──────────────────────────────────────────────
+# Security Groups (description은 기존 AWS와 동일하게 — 변경 시 재생성됨)
+# ──────────────────────────────────────────────
+
 resource "aws_security_group" "web" {
   name        = "${var.project_name}-${var.environment}-web-sg"
   description = "Security group for web servers"
   vpc_id      = aws_vpc.main.id
 
-  # SSH (22)
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # HTTP (80)
   ingress {
     description = "HTTP"
     from_port   = 80
@@ -84,7 +91,6 @@ resource "aws_security_group" "web" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # HTTPS (443)
   ingress {
     description = "HTTPS"
     from_port   = 443
@@ -93,15 +99,22 @@ resource "aws_security_group" "web" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-    ingress {
-      description = "Spring Boot"
-      from_port   = 8080
-      to_port     = 8080
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-  # 모든 아웃바운드 허용
+  ingress {
+    description = "Spring Boot"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -114,13 +127,11 @@ resource "aws_security_group" "web" {
   }
 }
 
-# RDS용 보안 그룹 (PostgreSQL)
 resource "aws_security_group" "db" {
   name        = "${var.project_name}-${var.environment}-db-sg"
   description = "Security group for RDS PostgreSQL"
   vpc_id      = aws_vpc.main.id
 
-  # VPC 내부 (EC2 → RDS)
   ingress {
     description     = "PostgreSQL from web servers"
     from_port       = 5432
@@ -129,7 +140,6 @@ resource "aws_security_group" "db" {
     security_groups = [aws_security_group.web.id]
   }
 
-  # 외부 전체 (개발용)
   ingress {
     description = "PostgreSQL from anywhere (DEV ONLY)"
     from_port   = 5432

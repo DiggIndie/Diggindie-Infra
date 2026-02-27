@@ -1,43 +1,35 @@
 # modules/rds/variables.tf
 
 variable "project_name" {
-  description = "프로젝트 이름"
-  type        = string
+  type = string
 }
 
 variable "environment" {
-  description = "환경"
-  type        = string
+  type = string
 }
 
 variable "public_subnet_ids" {
-  description = "퍼블릭 서브넷 ID 목록"
-  type        = list(string)
-}
-
-variable "db_security_group_id" {
-  description = "DB 보안 그룹 ID"
-  type        = string
+  type = list(string)
 }
 
 variable "db_name" {
-  description = "데이터베이스 이름"
-  type        = string
+  type = string
 }
 
 variable "db_username" {
-  description = "데이터베이스 사용자명"
-  type        = string
+  type = string
 }
 
 variable "db_password" {
-  description = "데이터베이스 비밀번호"
-  type        = string
-  sensitive   = true
+  type      = string
+  sensitive = true
 }
 
 variable "db_instance_class" {
-  description = "RDS 인스턴스 클래스"
-  type        = string
-  default     = "db.t3.micro"
+  type    = string
+  default = "db.t3.micro"
+}
+
+variable "db_security_group_id" {
+  type = string
 }
